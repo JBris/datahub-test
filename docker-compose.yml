@@ -2,6 +2,36 @@ networks:
   default:
     name: datahub_network
 services:
+  minio:
+    image: minio/minio:RELEASE.2023-05-27T05-56-19Z
+    restart: always
+    stop_grace_period: 10s
+    working_dir: /data
+    volumes:
+      - minio-data:/data
+    ports:
+      - 9000:9000
+      - 9001:9001
+    environment:
+      MINIO_ACCESS_KEY: user
+      MINIO_SECRET_KEY: password
+      MINIO_ROOT_USER: user
+      MINIO_ROOT_PASSWORD: password
+      MINIO_STORAGE_USE_HTTPS: False
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    command: server --console-address :9001 --address :9000 /data
+
+  mc:
+    image: minio/mc:RELEASE.2023-05-30T22-41-38Z
+    environment:
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: user
+      MINIO_SECRET_KEY: password
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c ' sleep 5; /usr/bin/mc config host add s3 http://minio:9000 user password --api S3v4; [[ ! -z "`/usr/bin/mc ls s3 | grep challenge`" ]] || /usr/bin/mc mb s3/mlflow;  /usr/bin/mc policy download s3/mlflow; [[ ! -z "`/usr/bin/mc ls s3 | grep challenge`" ]] || /usr/bin/mc mb s3/data;  /usr/bin/mc policy download s3/data; exit 0; '
+
   broker:
     depends_on:
       zookeeper:
@@ -29,6 +59,7 @@ services:
       - ${DATAHUB_MAPPED_KAFKA_BROKER_PORT:-9092}:9092
     volumes:
       - broker:/var/lib/kafka/data/
+
   datahub-actions:
     depends_on:
       datahub-gms:
@@ -48,6 +79,7 @@ services:
       - SCHEMA_REGISTRY_URL=http://schema-registry:8081
     hostname: actions
     image: ${DATAHUB_ACTIONS_IMAGE:-acryldata/datahub-actions}:${ACTIONS_VERSION:-head}
+
   datahub-frontend-react:
     depends_on:
       datahub-gms:
@@ -69,11 +101,13 @@ services:
       - ${DATAHUB_MAPPED_FRONTEND_PORT:-9002}:9002
     volumes:
       - ${HOME}/.datahub/plugins:/etc/datahub/plugins
+
   datahub-gms:
     depends_on:
       datahub-upgrade:
         condition: service_completed_successfully
     environment:
+      # - AUTH_POLICIES_ENABLED=false
       - DATAHUB_SERVER_TYPE=${DATAHUB_SERVER_TYPE:-quickstart}
       - DATAHUB_TELEMETRY_ENABLED=${DATAHUB_TELEMETRY_ENABLED:-true}
       - DATAHUB_UPGRADE_HISTORY_KAFKA_CONSUMER_GROUP_ID=generic-duhe-consumer-job-client-gms
@@ -116,6 +150,7 @@ services:
       - ${DATAHUB_MAPPED_GMS_PORT:-8080}:8080
     volumes:
       - ${HOME}/.datahub/plugins:/etc/datahub/plugins
+
   datahub-upgrade:
     command:
       - -u
@@ -152,6 +187,7 @@ services:
     image: ${DATAHUB_UPGRADE_IMAGE:-acryldata/datahub-upgrade}:${DATAHUB_VERSION:-head}
     labels:
       datahub_setup_job: true
+
   elasticsearch:
     deploy:
       resources:
@@ -174,6 +210,7 @@ services:
       - ${DATAHUB_MAPPED_ELASTIC_PORT:-9200}:9200
     volumes:
       - esdata:/usr/share/elasticsearch/data
+
   elasticsearch-setup:
     depends_on:
       elasticsearch:
@@ -188,6 +225,7 @@ services:
     image: ${DATAHUB_ELASTIC_SETUP_IMAGE:-acryldata/datahub-elasticsearch-setup}:${DATAHUB_VERSION:-head}
     labels:
       datahub_setup_job: true
+
   kafka-setup:
     depends_on:
       broker:
@@ -202,7 +240,9 @@ services:
     hostname: kafka-setup
     image: ${DATAHUB_KAFKA_SETUP_IMAGE:-acryldata/datahub-kafka-setup}:${DATAHUB_VERSION:-head}
     labels:
-      datahub_setup_job: true
+      datahub_setup_job:
+
+
   mysql:
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_bin --default-authentication-plugin=mysql_native_password
     environment:
@@ -223,6 +263,7 @@ services:
     restart: on-failure
     volumes:
       - mysqldata:/var/lib/mysql
+
   mysql-setup:
     depends_on:
       mysql:
@@ -237,6 +278,7 @@ services:
     image: ${DATAHUB_MYSQL_SETUP_IMAGE:-acryldata/datahub-mysql-setup}:${DATAHUB_VERSION:-head}
     labels:
       datahub_setup_job: true
+
   neo4j:
     environment:
       - NEO4J_AUTH=neo4j/datahub
@@ -274,6 +316,7 @@ services:
     image: ${DATAHUB_CONFLUENT_SCHEMA_REGISTRY_IMAGE:-confluentinc/cp-schema-registry}:${DATAHUB_CONFLUENT_VERSION:-7.4.0}
     ports:
       - ${DATAHUB_MAPPED_SCHEMA_REGISTRY_PORT:-8081}:8081
+
   zookeeper:
     environment:
       - ZOOKEEPER_CLIENT_PORT=2181
@@ -298,3 +341,4 @@ volumes:
   neo4jdata: null
   zkdata: null
   zklogs: null
+  minio-data: {}

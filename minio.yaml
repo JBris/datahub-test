@@ -1,0 +1,13 @@
+source:
+    type: s3
+    config:
+        path_specs:
+            -
+                include: 's3://data/*.*'
+        aws_config:
+            aws_access_key_id: user
+            aws_secret_access_key: password
+            aws_endpoint_url: 'http://minio:9000'
+            aws_region: us-east-2
+        profiling:
+            enabled: true
